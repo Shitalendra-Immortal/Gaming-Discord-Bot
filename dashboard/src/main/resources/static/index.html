@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaming Bot Admin Dashboard</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+body { font-family: sans-serif; margin: 2rem auto; max-width: 800px; padding: 0 1rem; }
+input, button { margin: 0.25rem; padding: 0.4rem; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border: 1px solid #ccc; padding: 0.4rem; text-align: left; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Gaming Bot Admin Dashboard</h1>
+  <p>Manage tournaments without typing Discord commands. Data comes from the same
+  <code>data/tournaments.json</code> file the bot uses. Restart the bot to pick up
+  tournaments created here.</p>
+
+  <h2>Tournaments</h2>
+  <button @click="load">Refresh</button>
+  <ul>
+    <li v-for="(t, name) in tournaments" :key="name">
+      <strong>{{ name }}</strong> — {{ t.game }} ({{ t.format }}, {{ t.date }},
+      {{ Object.keys(t.teams || {}).length }} teams,
+      registration {{ t.registrationOpen ? 'open' : 'closed' }})
+      <button @click="showLeaderboard(name)">Leaderboard</button>
+    </li>
+  </ul>
+
+  <h2>Create tournament</h2>
+  <form @submit.prevent="create">
+    <input v-model="form.name" placeholder="Name" required>
+    <input v-model="form.game" placeholder="Game" required>
+    <input v-model="form.format" placeholder="Format (Single elimination)">
+    <input v-model="form.date" placeholder="Date">
+    <input v-model.number="form.teamLimit" type="number" placeholder="Team limit (0 = none)">
+    <label><input v-model="form.soloAllowed" type="checkbox"> Solo allowed</label>
+    <button type="submit">Create</button>
+  </form>
+
+  <h2 v-if="board.length">Leaderboard: {{ boardName }}</h2>
+  <table v-if="board.length">
+    <tr><th>Team</th><th>Wins</th><th>Losses</th><th>Points</th></tr>
+    <tr v-for="row in board" :key="row.team">
+      <td>{{ row.team }}</td><td>{{ row.wins }}</td><td>{{ row.losses }}</td><td>{{ row.points }}</td>
+    </tr>
+  </table>
+</div>
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      tournaments: {},
+      board: [],
+      boardName: '',
+      form: { name: '', game: '', format: '', date: '', teamLimit: 0, soloAllowed: false }
+    };
+  },
+  mounted() { this.load(); },
+  methods: {
+    api(path) {
+      const token = new URLSearchParams(location.search).get('token');
+      if (!token) return path;
+      return path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
+    },
+    async load() {
+      const res = await fetch(this.api('/api/tournaments'));
+      this.tournaments = await res.json();
+    },
+    async create() {
+      await fetch(this.api('/api/tournaments'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.form)
+      });
+      this.form = { name: '', game: '', format: '', date: '', teamLimit: 0, soloAllowed: false };
+      this.load();
+    },
+    async showLeaderboard(name) {
+      const res = await fetch(this.api('/api/leaderboard?tournament=' + encodeURIComponent(name)));
+      this.board = await res.json();
+      this.boardName = name;
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
