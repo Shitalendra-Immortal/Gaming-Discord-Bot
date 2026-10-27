@@ -1,15 +1,18 @@
 # Gaming Community Discord Bot
 
 A Java bot for a gaming community, built on the Discord API (JDA) with
-JSON file storage. It covers the full feature list: tournaments, teams
-and players, leaderboards and match results, moderation, and
-announcements and reminders.
+SQLite storage — one database per server. It covers the full feature
+list: tournaments, teams and players, leaderboards and match results,
+moderation, and announcements and reminders.
 
 ## Features
 
 ### A. Tournament management
 - `/tournament-create` with game, format, date, team limit, and solo play
-- Register with `/register-solo` or the Register button on the creation message
+- Register with `/register-solo` or the Register button on the creation
+  message. The Register button only appears on solo tournaments; team
+  tournaments tell you to join with `/team-create` and `/team-join`
+  instead
 - Registration closes automatically when the team limit is reached
 - `/bracket` generates pairings and a schedule
 - `/announce-match` posts match details in the channel
@@ -18,7 +21,8 @@ announcements and reminders.
 - `/team-create` (creator becomes captain), `/team-invite`, `/team-join`
 - One team per player per tournament is enforced
 - Solo registration for tournaments that allow it
-- Player profiles with wins, losses, points, and match history (`/player-leaderboard`)
+- Player profiles with wins, losses, points, and match history
+  (`/player-leaderboard`, with a page option for long lists)
 
 ### C. Leaderboards and match results
 - `/submit-result` creates a pending result; the other side confirms with
@@ -29,7 +33,7 @@ announcements and reminders.
 
 ### D. Moderation
 - `/warn`, `/mute`, `/kick`, `/ban`, `/timeout`, `/clear`
-- Every action and reason is logged to `data/moderation.json` (`/mod-log`)
+- Every action and reason is logged to the server's database (`/mod-log`)
 - Discord role permissions are checked before each action
 - 5-second per-command cooldowns stop command spam
 
@@ -37,6 +41,32 @@ announcements and reminders.
 - `/announce-winner`, `/announce-match`, `/remind-captains`
 - `/remind` for a timed reminder in the channel
 - `/notify-opt` lets members turn matches, results, or announcements on/off
+
+### F. Utility
+- `/help` lists every command, grouped by category
+- `/status` shows uptime, server count, tournament count, and team count
+- When the bot joins a server, it posts a welcome message pointing at
+  `/help` and `/tournament-create`
+
+## Example run
+
+1. Create a tournament:
+   `/tournament-create name: Friday Cup game: Valorant format: Single elimination`
+2. Teams form: one captain runs `/team-create tournament: Friday Cup
+   team: Alpha`, others join with `/team-join`. (Or players register
+   solo if the tournament allows it.)
+3. Generate the bracket: `/bracket tournament: Friday Cup`. Round 1
+   pairings appear as scheduled matches.
+4. After a match, the winning captain reports it:
+   `/submit-result tournament: Friday Cup winner: Alpha loser: Beta`.
+   The losing captain confirms with `/confirm-result`, and only then
+   are the 3 points applied. A disputed result stays pending for
+   moderators instead of changing the leaderboard.
+5. Winners advance automatically: once every match in a round is
+   confirmed, the next round's pairings are created, until one team
+   remains as champion.
+6. Check standings anytime with `/leaderboard`, `/player-leaderboard`,
+   or the `/dashboard` panel.
 
 ## Setup
 
@@ -51,27 +81,38 @@ announcements and reminders.
 export DISCORD_TOKEN="your-bot-token-here"
 ```
 
-4. Build and run:
+4. Build and run (requires Java 17 and Maven):
 
 ```bash
 mvn package
 java -jar target/gaming-discord-bot-1.0.jar
 ```
 
-Tournament data is saved to `data/tournaments.json`, player data to
-`data/players.json`, and moderation actions to `data/moderation.json`.
-All three reload on start.
+Data lives in SQLite, one database per server
+(`data/<server-id>/bot.db`), so servers never see each other's
+tournaments, teams, or moderation logs. A backup copy of all data is
+made on every bot start. A JSON mirror of each server's tournaments is
+kept next to its database for the web dashboard (see below).
 
 ## Stand-out features
 
-- **Brackets:** `/bracket` supports single elimination (default), double
-  elimination, and round-robin formats, with byes for odd team counts.
-  Confirmed winners are tracked as advanced, and `/withdraw` removes a
-  team (captain or moderator only) and reopens registration if slots free up.
+- **Real bracket engine:** `/bracket` supports single elimination
+  (default), double elimination, and round-robin formats, with byes
+  for odd team counts. Single elimination advances confirmed winners
+  round by round until a champion is decided. Double elimination runs
+  a real winners bracket and losers bracket, then a final — and if the
+  losers-bracket champion wins the first final, a reset match decides
+  it. Round-robin creates the full schedule as real match records.
+  `/withdraw` removes a team (captain or moderator only): its pending
+  bracket matches are voided, its opponents advance, and registration
+  reopens if slots free up.
 - **Match verification:** only the winning team's captain can submit a
   result (with an optional score). Only the opposing team's captain can
   confirm it. No points are applied until confirmation. Disputes are
   logged for moderators instead of updating the leaderboard.
+- **Per-server data:** every server gets its own manager and database.
+  Tournaments, teams, player profiles, and moderation logs are scoped
+  to the server they were created in.
 - **Game roles:** `/game-role` assigns a Valorant, BGMI, Minecraft, or CS2
   role, replacing any previous game role. The bot needs Manage Roles and
   a role above the game roles.
@@ -87,7 +128,8 @@ All three reload on start.
 ## Web admin dashboard (Spring Boot + Vue)
 
 The dashboard is a small Spring Boot app with a Vue frontend that reads
-and writes the same `data/tournaments.json` file as the bot.
+the bot's per-server JSON mirror, so it always shows the same
+tournaments as the bot.
 
 ```bash
 cd dashboard
@@ -97,10 +139,14 @@ mvn spring-boot:run
 Then open http://localhost:8080. From there you can list tournaments,
 create one, and view leaderboards without typing Discord commands.
 The dashboard finds the bot's data folder whether you start it from the
-project root or from `dashboard/`, so both sides share the same file.
-Restart the bot to pick up tournaments created in the dashboard, since
-the bot loads its data at startup.
+project root or from `dashboard/`. Restart the bot to pick up
+tournaments created in the dashboard, since the bot loads its data at
+startup.
 
+Dashboard login: set `DASHBOARD_ADMIN_TOKEN` before starting the
+dashboard, then open it as
+`http://localhost:8080/?token=<your token>`. Without the token set, the
+dashboard is open (development only).
 
 ## Security notes
 
