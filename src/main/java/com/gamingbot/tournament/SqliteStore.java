@@ -83,6 +83,13 @@ public class SqliteStore {
             s.execute("CREATE TABLE IF NOT EXISTS mod_actions ("
                     + "id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, moderator TEXT, "
                     + "action TEXT, reason TEXT, timestamp TEXT)");
+            s.execute("CREATE TABLE IF NOT EXISTS scheduled_matches ("
+                    + "tournament TEXT, id INTEGER, team_a TEXT, team_b TEXT, "
+                    + "scheduled_at INTEGER, channel_id TEXT, checked_a INTEGER, "
+                    + "checked_b INTEGER, reminded INTEGER, started_notified INTEGER, "
+                    + "PRIMARY KEY (tournament, id))");
+            s.execute("CREATE TABLE IF NOT EXISTS player_links ("
+                    + "user TEXT, game TEXT, game_id TEXT, PRIMARY KEY (user, game))");
         } catch (SQLException e) {
             throw new IllegalStateException("Could not init database " + db, e);
         }
@@ -382,6 +389,109 @@ public class SqliteStore {
             }
         } catch (IOException e) {
             throw new IllegalStateException("Could not merge dashboard mirror", e);
+        }
+    }
+
+    // ----- Scheduled matches -----
+
+    public static Map<String, List<ScheduledMatch>> loadScheduled(Path db) {
+        init(db);
+        Map<String, List<ScheduledMatch>> out = new LinkedHashMap<>();
+        try (Connection c = connect(db);
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery(
+                     "SELECT * FROM scheduled_matches ORDER BY scheduled_at")) {
+            while (rs.next()) {
+                ScheduledMatch m = new ScheduledMatch();
+                m.tournament = rs.getString("tournament");
+                m.id = rs.getInt("id");
+                m.teamA = rs.getString("team_a");
+                m.teamB = rs.getString("team_b");
+                m.scheduledAt = rs.getLong("scheduled_at");
+                m.channelId = rs.getString("channel_id");
+                m.checkedA = rs.getInt("checked_a") == 1;
+                m.checkedB = rs.getInt("checked_b") == 1;
+                m.reminded = rs.getInt("reminded") == 1;
+                m.startedNotified = rs.getInt("started_notified") == 1;
+                out.computeIfAbsent(m.tournament, k -> new ArrayList<>()).add(m);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not load scheduled matches", e);
+        }
+        return out;
+    }
+
+    public static void saveScheduled(Path db, Map<String, List<ScheduledMatch>> data) {
+        init(db);
+        try (Connection c = connect(db)) {
+            c.setAutoCommit(false);
+            try (Statement clear = c.createStatement()) {
+                clear.execute("DELETE FROM scheduled_matches");
+            }
+            try (PreparedStatement stmt = c.prepareStatement(
+                    "INSERT INTO scheduled_matches VALUES (?,?,?,?,?,?,?,?,?,?)")) {
+                for (List<ScheduledMatch> matches : data.values()) {
+                    for (ScheduledMatch m : matches) {
+                        int i = 1;
+                        stmt.setString(i++, m.tournament);
+                        stmt.setInt(i++, m.id);
+                        stmt.setString(i++, str(m.teamA));
+                        stmt.setString(i++, str(m.teamB));
+                        stmt.setLong(i++, m.scheduledAt);
+                        stmt.setString(i++, str(m.channelId));
+                        stmt.setInt(i++, bool(m.checkedA));
+                        stmt.setInt(i++, bool(m.checkedB));
+                        stmt.setInt(i++, bool(m.reminded));
+                        stmt.setInt(i++, bool(m.startedNotified));
+                        stmt.executeUpdate();
+                    }
+                }
+            }
+            c.commit();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not save scheduled matches", e);
+        }
+    }
+
+    // ----- Linked game accounts -----
+
+    public static Map<String, Map<String, String>> loadLinks(Path db) {
+        init(db);
+        Map<String, Map<String, String>> out = new LinkedHashMap<>();
+        try (Connection c = connect(db);
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT * FROM player_links")) {
+            while (rs.next()) {
+                out.computeIfAbsent(rs.getString("user"), k -> new LinkedHashMap<>())
+                        .put(rs.getString("game"), rs.getString("game_id"));
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not load game links", e);
+        }
+        return out;
+    }
+
+    public static void saveLinks(Path db, Map<String, Map<String, String>> data) {
+        init(db);
+        try (Connection c = connect(db)) {
+            c.setAutoCommit(false);
+            try (Statement clear = c.createStatement()) {
+                clear.execute("DELETE FROM player_links");
+            }
+            try (PreparedStatement stmt = c.prepareStatement(
+                    "INSERT INTO player_links VALUES (?,?,?)")) {
+                for (Map.Entry<String, Map<String, String>> user : data.entrySet()) {
+                    for (Map.Entry<String, String> link : user.getValue().entrySet()) {
+                        stmt.setString(1, user.getKey());
+                        stmt.setString(2, link.getKey());
+                        stmt.setString(3, link.getValue());
+                        stmt.executeUpdate();
+                    }
+                }
+            }
+            c.commit();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not save game links", e);
         }
     }
 

@@ -25,6 +25,10 @@ public class Managers {
                 key -> new TournamentManager(key, baseDir));
     }
 
+    public java.util.Collection<TournamentManager> all() {
+        return managers.values();
+    }
+
     public int tournamentCount() {
         return managers.values().stream().mapToInt(TournamentManager::tournamentCount).sum();
     }

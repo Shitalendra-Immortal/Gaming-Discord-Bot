@@ -1,9 +1,12 @@
 package com.gamingbot;
 
 import com.gamingbot.listeners.GameRoleListener;
+import com.gamingbot.listeners.LiveStatsListener;
 import com.gamingbot.listeners.ModerationListener;
 import com.gamingbot.listeners.ReminderListener;
+import com.gamingbot.listeners.SchedulingListener;
 import com.gamingbot.listeners.TournamentListener;
+import com.gamingbot.scheduling.MatchScheduler;
 import com.gamingbot.tournament.Managers;
 import com.gamingbot.tournament.TournamentManager;
 import net.dv8tion.jda.api.JDA;
@@ -31,6 +34,8 @@ public class BotMain extends ListenerAdapter {
     private static final String HELP_TEXT =
             "**LEGEND commands**\n"
             + "Tournaments: /tournament-create, /tournament-list, /dashboard, /bracket, /withdraw\n"
+            + "Scheduling: /schedule-match, /check-in, /upcoming\n"
+            + "Live stats: /link-game, /live-stats\n"
             + "Teams: /team-create, /team-invite, /team-join, /register-solo\n"
             + "Results: /submit-result, /confirm-result, /dispute-result, /correct-result (mods)\n"
             + "Standings: /leaderboard, /player-leaderboard, /player-stats\n"
@@ -59,9 +64,11 @@ public class BotMain extends ListenerAdapter {
                 .enableIntents(GatewayIntent.GUILD_MESSAGES)
                 .setActivity(Activity.playing("Tournaments | /leaderboard"))
                 .addEventListeners(new BotMain(managers), new TournamentListener(managers),
-                        new ModerationListener(), new ReminderListener(), new GameRoleListener())
+                        new ModerationListener(), new ReminderListener(), new GameRoleListener(),
+                        new SchedulingListener(managers), new LiveStatsListener(managers))
                 .build();
         jda.awaitReady();
+        new MatchScheduler(jda, managers).start();
         System.out.println("Gaming bot is online.");
     }
 
@@ -219,7 +226,26 @@ public class BotMain extends ListenerAdapter {
                 Commands.slash("mod-log", "Show recent moderation actions"),
                 Commands.slash("remind", "Set a reminder in this channel")
                         .addOption(OptionType.INTEGER, "minutes", "Minutes from now", true)
-                        .addOption(OptionType.STRING, "message", "Reminder text", true)
+                        .addOption(OptionType.STRING, "message", "Reminder text", true),
+                Commands.slash("schedule-match", "Schedule a match at a fixed date and time (IST)")
+                        .addOption(OptionType.STRING, "tournament", "Tournament name", true)
+                        .addOption(OptionType.STRING, "team-a", "First team", true)
+                        .addOption(OptionType.STRING, "team-b", "Second team", true)
+                        .addOption(OptionType.STRING, "date", "Date YYYY-MM-DD", true)
+                        .addOption(OptionType.STRING, "time", "Time HH:MM, 24-hour, IST", true),
+                Commands.slash("check-in", "Check your team in for a scheduled match (captains only)")
+                        .addOption(OptionType.STRING, "tournament", "Tournament name", true)
+                        .addOption(OptionType.INTEGER, "match", "Scheduled match number", true),
+                Commands.slash("upcoming", "List upcoming scheduled matches for a tournament")
+                        .addOption(OptionType.STRING, "tournament", "Tournament name", true),
+                Commands.slash("link-game", "Link your game account for live stats")
+                        .addOptions(new OptionData(OptionType.STRING, "game", "Game", true)
+                                .addChoice("Valorant", "Valorant")
+                                .addChoice("CS2", "CS2"),
+                                new OptionData(OptionType.STRING, "id",
+                                        "Riot ID like Name#TAG, or Steam ID / vanity name", true)),
+                Commands.slash("live-stats", "Show live game stats for a linked account")
+                        .addOption(OptionType.USER, "user", "Player (defaults to you)", false)
         ).queue();
     }
 }

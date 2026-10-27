@@ -3,7 +3,8 @@
 A Java bot for a gaming community, built on the Discord API (JDA) with
 SQLite storage — one database per server. It covers the full feature
 list: tournaments, teams and players, leaderboards and match results,
-moderation, and announcements and reminders.
+moderation, announcements and reminders, scheduled matches and
+check-ins, and live game stats.
 
 ## Features
 
@@ -48,6 +49,29 @@ moderation, and announcements and reminders.
 - When the bot joins a server, it posts a welcome message pointing at
   `/help` and `/tournament-create`
 
+### G. Scheduling and check-ins
+- `/schedule-match` books a match at a fixed date and time (date
+  `YYYY-MM-DD`, time `HH:MM` 24-hour, IST) in the channel where the
+  command runs
+- `/check-in` lets a team's captain check the team in. Check-in closes
+  15 minutes after the match time
+- `/upcoming` lists a tournament's scheduled matches with each team's
+  check-in status
+- The bot reminds captains automatically 30 minutes before a match,
+  and posts a start notice at match time — including a no-show note
+  for any team that never checked in. Results still go through the
+  normal submit/confirm flow; a no-show never awards points by itself
+
+### H. Live game stats
+- `/link-game` links your game account: Valorant by Riot ID
+  (`Name#TAG`), or CS2 by Steam ID or vanity name
+- `/live-stats` shows real data for a linked account: recent Valorant
+  form (W-L and K/D over the last 5 matches, Asia-Pacific shard) or
+  CS2 lifetime kills, deaths, and wins
+- Live stats need API keys on the bot host (see Setup). Without a key,
+  the command says so instead of failing. Note: Riot developer keys
+  last 24 hours; a long-lived key needs Riot production approval
+
 ## Example run
 
 1. Create a tournament:
@@ -79,6 +103,13 @@ moderation, and announcements and reminders.
 
 ```bash
 export DISCORD_TOKEN="your-bot-token-here"
+```
+
+Optional, for live game stats only:
+
+```bash
+export RIOT_API_KEY="your-riot-api-key"
+export STEAM_API_KEY="your-steam-api-key"
 ```
 
 4. Build and run (requires Java 17 and Maven):

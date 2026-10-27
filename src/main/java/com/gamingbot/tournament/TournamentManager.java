@@ -1,6 +1,9 @@
 package com.gamingbot.tournament;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +15,8 @@ public class TournamentManager {
     private final Path db;
     private final Map<String, Tournament> tournaments;
     private final Map<String, PlayerProfile> profiles;
+    private final Map<String, List<ScheduledMatch>> scheduled;
+    private final Map<String, Map<String, String>> links;
 
     public TournamentManager(String guildKey) {
         this(guildKey, Path.of("data"));
@@ -24,6 +29,8 @@ public class TournamentManager {
         this.tournaments = new ConcurrentHashMap<>(SqliteStore.loadTournaments(db));
         SqliteStore.mergeMirrorTournaments(db, guildDir, this.tournaments);
         this.profiles = new ConcurrentHashMap<>(SqliteStore.loadPlayers(db));
+        this.scheduled = new ConcurrentHashMap<>(SqliteStore.loadScheduled(db));
+        this.links = new ConcurrentHashMap<>(SqliteStore.loadLinks(db));
     }
 
     public synchronized int tournamentCount() {
@@ -37,6 +44,177 @@ public class TournamentManager {
     private void save() {
         SqliteStore.saveTournaments(db, tournaments);
         SqliteStore.savePlayers(db, profiles);
+        SqliteStore.saveScheduled(db, scheduled);
+        SqliteStore.saveLinks(db, links);
+    }
+
+    public static String formatIst(long epochMillis) {
+        return Instant.ofEpochMilli(epochMillis)
+                .atZone(ZoneId.of("Asia/Kolkata"))
+                .format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"));
+    }
+
+    public synchronized String scheduleMatch(String tournamentName, String teamA,
+                                             String teamB, long epochMillis, String channelId) {
+        Tournament t = tournaments.get(tournamentName);
+        if (t == null) {
+            return "No tournament called '" + tournamentName + "'.";
+        }
+        if (!t.teams.containsKey(teamA)) {
+            return "No team called '" + teamA + "' in this tournament.";
+        }
+        if (!t.teams.containsKey(teamB)) {
+            return "No team called '" + teamB + "' in this tournament.";
+        }
+        if (teamA.equals(teamB)) {
+            return "A team cannot play itself.";
+        }
+        List<ScheduledMatch> matches = scheduled.computeIfAbsent(tournamentName,
+                k -> new ArrayList<>());
+        int id = 1;
+        for (ScheduledMatch m : matches) {
+            id = Math.max(id, m.id + 1);
+        }
+        matches.add(new ScheduledMatch(id, tournamentName, teamA, teamB, epochMillis, channelId));
+        save();
+        return "Match #" + id + " scheduled: " + teamA + " vs " + teamB + " on "
+                + formatIst(epochMillis)
+                + " IST. Captains, check in with /check-in before it starts.";
+    }
+
+    public synchronized String checkIn(String tournamentName, int matchId, String user) {
+        Tournament t = tournaments.get(tournamentName);
+        if (t == null) {
+            return "No tournament called '" + tournamentName + "'.";
+        }
+        ScheduledMatch m = findScheduled(tournamentName, matchId);
+        if (m == null) {
+            return "No scheduled match #" + matchId + " in '" + tournamentName + "'.";
+        }
+        if (System.currentTimeMillis() > m.scheduledAt + 15 * 60 * 1000) {
+            return "Check-in is closed for match #" + matchId + " (it started over 15 minutes ago).";
+        }
+        String team = null;
+        boolean isA = false;
+        if (t.teams.containsKey(m.teamA) && t.teams.get(m.teamA).captain.equals(user)) {
+            team = m.teamA;
+            isA = true;
+        } else if (t.teams.containsKey(m.teamB) && t.teams.get(m.teamB).captain.equals(user)) {
+            team = m.teamB;
+        }
+        if (team == null) {
+            return "Only a captain of " + m.teamA + " or " + m.teamB + " can check in.";
+        }
+        if (isA ? m.checkedA : m.checkedB) {
+            return team + " is already checked in for match #" + matchId + ".";
+        }
+        if (isA) {
+            m.checkedA = true;
+        } else {
+            m.checkedB = true;
+        }
+        save();
+        if (m.checkedA && m.checkedB) {
+            return team + " checked in. Both teams are checked in — match #" + matchId + " is ready!";
+        }
+        String waiting = isA ? m.teamB : m.teamA;
+        return team + " checked in for match #" + matchId + ". Waiting on " + waiting + ".";
+    }
+
+    private ScheduledMatch findScheduled(String tournamentName, int matchId) {
+        List<ScheduledMatch> matches = scheduled.getOrDefault(tournamentName, List.of());
+        for (ScheduledMatch m : matches) {
+            if (m.id == matchId) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    public synchronized String upcoming(String tournamentName) {
+        Tournament t = tournaments.get(tournamentName);
+        if (t == null) {
+            return "No tournament called '" + tournamentName + "'.";
+        }
+        long now = System.currentTimeMillis();
+        List<ScheduledMatch> future = new ArrayList<>();
+        for (ScheduledMatch m : scheduled.getOrDefault(tournamentName, List.of())) {
+            if (m.scheduledAt + 15 * 60 * 1000 >= now) {
+                future.add(m);
+            }
+        }
+        if (future.isEmpty()) {
+            return "No upcoming matches scheduled in '" + tournamentName + "'.";
+        }
+        future.sort(java.util.Comparator.comparingLong(m -> m.scheduledAt));
+        StringBuilder out = new StringBuilder("**Upcoming matches: ").append(tournamentName).append("**\n");
+        for (ScheduledMatch m : future) {
+            out.append("#").append(m.id).append(" ").append(m.teamA).append(" vs ").append(m.teamB)
+                    .append(" — ").append(formatIst(m.scheduledAt)).append(" IST — check-in: ")
+                    .append(m.teamA).append(m.checkedA ? " ✓" : " ✗").append(", ")
+                    .append(m.teamB).append(m.checkedB ? " ✓" : " ✗").append("\n");
+        }
+        return out.toString();
+    }
+
+    public synchronized List<ScheduledMatch> collectDueReminders(long now) {
+        List<ScheduledMatch> due = new ArrayList<>();
+        boolean changed = false;
+        for (List<ScheduledMatch> matches : scheduled.values()) {
+            for (ScheduledMatch m : matches) {
+                if (m.reminded || m.scheduledAt <= now) {
+                    continue;
+                }
+                if (m.checkedA && m.checkedB) {
+                    m.reminded = true;
+                    changed = true;
+                    continue;
+                }
+                if (m.scheduledAt - now <= 30 * 60 * 1000) {
+                    m.reminded = true;
+                    changed = true;
+                    due.add(m);
+                }
+            }
+        }
+        if (changed) {
+            save();
+        }
+        return due;
+    }
+
+    public synchronized List<ScheduledMatch> collectStarting(long now) {
+        List<ScheduledMatch> starting = new ArrayList<>();
+        boolean changed = false;
+        for (List<ScheduledMatch> matches : scheduled.values()) {
+            for (ScheduledMatch m : matches) {
+                if (!m.startedNotified && now >= m.scheduledAt) {
+                    m.startedNotified = true;
+                    changed = true;
+                    starting.add(m);
+                }
+            }
+        }
+        if (changed) {
+            save();
+        }
+        return starting;
+    }
+
+    public synchronized String linkGame(String user, String game, String gameId) {
+        links.computeIfAbsent(user, k -> new LinkedHashMap<>()).put(game, gameId);
+        save();
+        return "Linked " + game + " account " + gameId + " for " + user + ".";
+    }
+
+    public synchronized String getGameLink(String user, String game) {
+        Map<String, String> userLinks = links.get(user);
+        return userLinks == null ? null : userLinks.get(game);
+    }
+
+    public synchronized Map<String, String> linkedGames(String user) {
+        Map<String, String> userLinks = links.get(user);
+        return userLinks == null ? Map.of() : new LinkedHashMap<>(userLinks);
     }
 
     private PlayerProfile profile(String user) {
