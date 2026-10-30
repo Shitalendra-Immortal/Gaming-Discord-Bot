@@ -56,6 +56,12 @@ public class TournamentManager {
 
     public synchronized String scheduleMatch(String tournamentName, String teamA,
                                              String teamB, long epochMillis, String channelId) {
+        return scheduleMatch(tournamentName, teamA, teamB, epochMillis, channelId, "", "");
+    }
+
+    public synchronized String scheduleMatch(String tournamentName, String teamA,
+                                             String teamB, long epochMillis, String channelId,
+                                             String format, String maps) {
         Tournament t = tournaments.get(tournamentName);
         if (t == null) {
             return "No tournament called '" + tournamentName + "'.";
@@ -75,7 +81,8 @@ public class TournamentManager {
         for (ScheduledMatch m : matches) {
             id = Math.max(id, m.id + 1);
         }
-        matches.add(new ScheduledMatch(id, tournamentName, teamA, teamB, epochMillis, channelId));
+        matches.add(new ScheduledMatch(id, tournamentName, teamA, teamB, epochMillis, channelId,
+                format, maps));
         save();
         return "Match #" + id + " scheduled: " + teamA + " vs " + teamB + " on "
                 + formatIst(epochMillis)
@@ -119,6 +126,35 @@ public class TournamentManager {
         }
         String waiting = isA ? m.teamB : m.teamA;
         return team + " checked in for match #" + matchId + ". Waiting on " + waiting + ".";
+    }
+
+    public synchronized ScheduledMatch scheduledMatch(String tournamentName, int matchId) {
+        return findScheduled(tournamentName, matchId);
+    }
+
+    public synchronized List<Team> rankedTeams(String tournamentName) {
+        Tournament t = tournaments.get(tournamentName);
+        if (t == null) {
+            return List.of();
+        }
+        List<Team> teams = new ArrayList<>(t.teams.values());
+        teams.sort((a, b) -> {
+            int byPoints = Integer.compare(b.points(), a.points());
+            return byPoints != 0 ? byPoints : Integer.compare(b.wins, a.wins);
+        });
+        return teams;
+    }
+
+    public synchronized List<ScheduledMatch> upcomingMatches(String tournamentName) {
+        long now = System.currentTimeMillis();
+        List<ScheduledMatch> future = new ArrayList<>();
+        for (ScheduledMatch m : scheduled.getOrDefault(tournamentName, List.of())) {
+            if (m.scheduledAt + 15 * 60 * 1000 >= now) {
+                future.add(m);
+            }
+        }
+        future.sort(java.util.Comparator.comparingLong(m -> m.scheduledAt));
+        return future;
     }
 
     private ScheduledMatch findScheduled(String tournamentName, int matchId) {
@@ -271,10 +307,18 @@ public class TournamentManager {
 
     public synchronized String createTournament(String name, String game, String format,
                                                 String date, int teamLimit, boolean soloAllowed) {
+        return createTournament(name, game, format, date, teamLimit, soloAllowed, "");
+    }
+
+    public synchronized String createTournament(String name, String game, String format,
+                                                String date, int teamLimit, boolean soloAllowed,
+                                                String prizePool) {
         if (tournaments.containsKey(name)) {
             return "A tournament called '" + name + "' already exists.";
         }
-        tournaments.put(name, new Tournament(name, game, format, date, teamLimit, soloAllowed));
+        Tournament t = new Tournament(name, game, format, date, teamLimit, soloAllowed);
+        t.prizePool = prizePool == null ? "" : prizePool;
+        tournaments.put(name, t);
         save();
         return "Tournament '" + name + "' (" + game + ", " + format + ", " + date
                 + ") created. Registration is open.";

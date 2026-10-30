@@ -26,6 +26,7 @@ public class Tournament {
     public String losersChampion = "";
     public int finalStage;
     public String champion = "";
+    public String prizePool = "";
 
     public Tournament() {
     }

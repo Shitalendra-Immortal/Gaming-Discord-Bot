@@ -41,6 +41,18 @@ public class SqliteStore {
             new TypeToken<ArrayList<String>>() {
             }.getType();
 
+    private static void ensureColumn(Connection c, String table, String column, String type)
+            throws SQLException {
+        try (ResultSet rs = c.createStatement().executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equals(rs.getString("name"))) {
+                    return;
+                }
+            }
+        }
+        c.createStatement().execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+    }
+
     public static Path dbFile(Path guildDir) {
         return guildDir.resolve("bot.db");
     }
@@ -67,7 +79,7 @@ public class SqliteStore {
                     + "bracket_json TEXT, advanced_json TEXT, withdrawn_json TEXT, "
                     + "bracket_round INTEGER, bracket_pool_json TEXT, losers_pool_json TEXT, "
                     + "losers_round INTEGER, winners_champion TEXT, losers_champion TEXT, "
-                    + "final_stage INTEGER, champion TEXT)");
+                    + "final_stage INTEGER, champion TEXT, prize_pool TEXT)");
             s.execute("CREATE TABLE IF NOT EXISTS teams ("
                     + "tournament TEXT, name TEXT, captain TEXT, wins INTEGER, losses INTEGER, "
                     + "players_json TEXT, PRIMARY KEY (tournament, name))");
@@ -87,9 +99,14 @@ public class SqliteStore {
                     + "tournament TEXT, id INTEGER, team_a TEXT, team_b TEXT, "
                     + "scheduled_at INTEGER, channel_id TEXT, checked_a INTEGER, "
                     + "checked_b INTEGER, reminded INTEGER, started_notified INTEGER, "
+                    + "format TEXT, maps TEXT, "
                     + "PRIMARY KEY (tournament, id))");
             s.execute("CREATE TABLE IF NOT EXISTS player_links ("
                     + "user TEXT, game TEXT, game_id TEXT, PRIMARY KEY (user, game))");
+            // Migrations for databases created before these columns existed.
+            ensureColumn(c, "tournaments", "prize_pool", "TEXT");
+            ensureColumn(c, "scheduled_matches", "format", "TEXT");
+            ensureColumn(c, "scheduled_matches", "maps", "TEXT");
         } catch (SQLException e) {
             throw new IllegalStateException("Could not init database " + db, e);
         }
@@ -139,6 +156,8 @@ public class SqliteStore {
                 t.losersChampion = rs.getString("losers_champion");
                 t.finalStage = rs.getInt("final_stage");
                 t.champion = rs.getString("champion");
+                String prizePool = rs.getString("prize_pool");
+                t.prizePool = prizePool == null ? "" : prizePool;
                 out.put(t.name, t);
             }
         } catch (SQLException e) {
@@ -197,7 +216,7 @@ public class SqliteStore {
                 clear.execute("DELETE FROM tournaments");
             }
             try (PreparedStatement tStmt = c.prepareStatement(
-                    "INSERT INTO tournaments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                    "INSERT INTO tournaments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
                  PreparedStatement teamStmt = c.prepareStatement(
                          "INSERT INTO teams VALUES (?,?,?,?,?,?)");
                  PreparedStatement mStmt = c.prepareStatement(
@@ -222,6 +241,7 @@ public class SqliteStore {
                     tStmt.setString(i++, str(t.losersChampion));
                     tStmt.setInt(i++, t.finalStage);
                     tStmt.setString(i++, str(t.champion));
+                    tStmt.setString(i++, str(t.prizePool));
                     tStmt.executeUpdate();
                     for (Team team : t.teams.values()) {
                         int j = 1;
@@ -413,6 +433,10 @@ public class SqliteStore {
                 m.checkedB = rs.getInt("checked_b") == 1;
                 m.reminded = rs.getInt("reminded") == 1;
                 m.startedNotified = rs.getInt("started_notified") == 1;
+                String format = rs.getString("format");
+                m.format = format == null ? "" : format;
+                String maps = rs.getString("maps");
+                m.maps = maps == null ? "" : maps;
                 out.computeIfAbsent(m.tournament, k -> new ArrayList<>()).add(m);
             }
         } catch (SQLException e) {
@@ -429,7 +453,7 @@ public class SqliteStore {
                 clear.execute("DELETE FROM scheduled_matches");
             }
             try (PreparedStatement stmt = c.prepareStatement(
-                    "INSERT INTO scheduled_matches VALUES (?,?,?,?,?,?,?,?,?,?)")) {
+                    "INSERT INTO scheduled_matches VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")) {
                 for (List<ScheduledMatch> matches : data.values()) {
                     for (ScheduledMatch m : matches) {
                         int i = 1;
@@ -443,6 +467,8 @@ public class SqliteStore {
                         stmt.setInt(i++, bool(m.checkedB));
                         stmt.setInt(i++, bool(m.reminded));
                         stmt.setInt(i++, bool(m.startedNotified));
+                        stmt.setString(i++, str(m.format));
+                        stmt.setString(i++, str(m.maps));
                         stmt.executeUpdate();
                     }
                 }

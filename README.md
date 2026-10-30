@@ -72,6 +72,23 @@ check-ins, and live game stats.
   the command says so instead of failing. Note: Riot developer keys
   last 24 hours; a long-lived key needs Riot production approval
 
+### I. Neon card UI
+- Tournament announcements, scheduled matches, leaderboards, and
+  upcoming matches are posted as neon-purple embeds instead of plain
+  text, matching the mockup style: a trophy card for tournaments, a
+  VS card for matches, and a table-style card for standings.
+- Cards carry working buttons: Register Team, View Rules, and
+  Tournament Bracket on tournament announcements; Match Details,
+  Check-in, and Submit Result on scheduled matches.
+- `/dashboard` has a Server Info view with member, tournament, and
+  team totals, supported games (Valorant, CS2, BGMI, Minecraft), and
+  the feature list. (A bot cannot add Discord's side panels, so that
+  info lives in the dashboard instead. Banner art is not included:
+  embeds need a hosted image URL, which is not configured.)
+- New optional details feed the cards: `prize-pool` on
+  `/tournament-create`, and `format` (e.g. BO3) plus `maps` (e.g.
+  Bind, Ascent, Haven) on `/schedule-match`.
+
 ## Example run
 
 1. Create a tournament:

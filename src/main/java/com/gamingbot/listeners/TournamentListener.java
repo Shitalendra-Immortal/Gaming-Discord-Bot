@@ -5,6 +5,7 @@ import com.gamingbot.tournament.MatchRecord;
 import com.gamingbot.tournament.Team;
 import com.gamingbot.tournament.Tournament;
 import com.gamingbot.tournament.TournamentManager;
+import com.gamingbot.ui.NeonEmbeds;
 import com.gamingbot.util.Cooldowns;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
@@ -60,11 +61,29 @@ public class TournamentListener extends ListenerAdapter {
         String id = event.getComponentId();
         if (id.startsWith("dashboard:")) {
             String view = id.substring("dashboard:".length());
+            if (view.equals("server")) {
+                int members = event.getGuild() == null ? 0 : event.getGuild().getMemberCount();
+                TournamentManager m = manager(event);
+                event.editMessageEmbeds(NeonEmbeds.serverCard(
+                                members, m.tournamentCount(), m.teamCount()))
+                        .setActionRow(dashboardButtons()).queue();
+                return;
+            }
             if (view.equals("refresh")) {
                 view = "tournaments";
             }
             event.editMessageEmbeds(buildDashboard(view, event.getJDA(), manager(event)))
                     .setActionRow(dashboardButtons()).queue();
+            return;
+        }
+        if (id.startsWith("tourney-rules:")) {
+            String tournament = id.substring("tourney-rules:".length());
+            event.replyEmbeds(NeonEmbeds.rulesCard(tournament)).setEphemeral(true).queue();
+            return;
+        }
+        if (id.startsWith("tourney-bracket:")) {
+            String tournament = id.substring("tourney-bracket:".length());
+            event.reply(manager(event).bracket(tournament)).setEphemeral(true).queue();
             return;
         }
         if (!id.startsWith("register:")) {
@@ -79,6 +98,7 @@ public class TournamentListener extends ListenerAdapter {
         return new Button[] {
                 Button.primary("dashboard:tournaments", "Tournaments"),
                 Button.secondary("dashboard:leaderboard", "Leaderboard"),
+                Button.secondary("dashboard:server", "Server Info"),
                 Button.success("dashboard:refresh", "Refresh")
         };
     }
@@ -87,7 +107,7 @@ public class TournamentListener extends ListenerAdapter {
         Map<String, Tournament> tournaments = manager.snapshot();
         EmbedBuilder embed = new EmbedBuilder()
                 .setTitle("leaderboard".equals(view) ? "Gaming Dashboard — Leaderboards" : "Gaming Dashboard")
-                .setColor(0x5865F2)
+                .setColor(NeonEmbeds.NEON_PURPLE)
                 .setTimestamp(Instant.now());
         String avatar = jda.getSelfUser().getEffectiveAvatarUrl();
         if (avatar != null) {
@@ -211,22 +231,34 @@ public class TournamentListener extends ListenerAdapter {
             case "tournament-create": {
                 String format = optString(event, "format");
                 String date = optString(event, "date");
+                String prizePool = optString(event, "prize-pool");
                 long limit = event.getOption("team-limit") == null
                         ? 0 : event.getOption("team-limit").getAsLong();
                 boolean solo = event.getOption("solo") != null
                         && event.getOption("solo").getAsBoolean();
-                String reply = manager.createTournament(reqString(event, "name"),
+                String name = reqString(event, "name");
+                String reply = manager.createTournament(name,
                         reqString(event, "game"),
                         format == null ? "Single elimination" : format,
-                        date == null ? "TBD" : date, (int) limit, solo);
+                        date == null ? "TBD" : date, (int) limit, solo,
+                        prizePool == null ? "" : prizePool);
+                if (reply.contains("already exists")) {
+                    event.reply(reply).queue();
+                    break;
+                }
+                Tournament created = manager.snapshot().get(name);
+                MessageEmbed card = NeonEmbeds.tournamentCard(created);
+                Button rules = Button.secondary("tourney-rules:" + name, "View Rules");
+                Button bracket = Button.secondary("tourney-bracket:" + name, "Tournament Bracket");
                 if (solo) {
-                    event.reply(reply)
-                            .addActionRow(Button.primary("register:" + reqString(event, "name"),
-                                    "Register"))
+                    event.reply(reply).addEmbeds(card)
+                            .addActionRow(Button.primary("register:" + name, "Register Team"),
+                                    rules, bracket)
                             .queue();
                 } else {
                     event.reply(reply + "\nTo join: create a team with /team-create, "
-                            + "then join it with /team-join.").queue();
+                            + "then join it with /team-join.").addEmbeds(card)
+                            .addActionRow(rules, bracket).queue();
                 }
                 break;
             }
@@ -326,9 +358,16 @@ public class TournamentListener extends ListenerAdapter {
                 event.reply(manager.playerStats(user)).queue();
                 break;
             }
-            case "leaderboard":
-                event.reply(manager.leaderboard(reqString(event, "tournament"))).queue();
+            case "leaderboard": {
+                String tournament = reqString(event, "tournament");
+                if (!manager.snapshot().containsKey(tournament)) {
+                    event.reply(manager.leaderboard(tournament)).queue();
+                    break;
+                }
+                event.replyEmbeds(NeonEmbeds.leaderboardCard(tournament,
+                        manager.rankedTeams(tournament))).queue();
                 break;
+            }
             case "player-leaderboard": {
                 int page = event.getOption("page") == null
                         ? 1 : (int) event.getOption("page").getAsLong();

@@ -141,7 +141,8 @@ public class BotMain extends ListenerAdapter {
                         .addOption(OptionType.STRING, "format", "Format, e.g. Single elimination", false)
                         .addOption(OptionType.STRING, "date", "Tournament date", false)
                         .addOption(OptionType.INTEGER, "team-limit", "Max teams, 0 means no limit", false)
-                        .addOption(OptionType.BOOLEAN, "solo", "Allow solo registration", false),
+                        .addOption(OptionType.BOOLEAN, "solo", "Allow solo registration", false)
+                        .addOption(OptionType.STRING, "prize-pool", "Prize pool, e.g. ₹5,000", false),
                 Commands.slash("tournament-list", "List all tournaments"),
                 Commands.slash("dashboard", "Show the in-Discord dashboard with tournaments and standings"),
                 Commands.slash("team-create", "Create a team in a tournament (you become captain)")
@@ -232,7 +233,9 @@ public class BotMain extends ListenerAdapter {
                         .addOption(OptionType.STRING, "team-a", "First team", true)
                         .addOption(OptionType.STRING, "team-b", "Second team", true)
                         .addOption(OptionType.STRING, "date", "Date YYYY-MM-DD", true)
-                        .addOption(OptionType.STRING, "time", "Time HH:MM, 24-hour, IST", true),
+                        .addOption(OptionType.STRING, "time", "Time HH:MM, 24-hour, IST", true)
+                        .addOption(OptionType.STRING, "format", "Match format, e.g. BO3", false)
+                        .addOption(OptionType.STRING, "maps", "Map pool, e.g. Bind, Ascent, Haven", false),
                 Commands.slash("check-in", "Check your team in for a scheduled match (captains only)")
                         .addOption(OptionType.STRING, "tournament", "Tournament name", true)
                         .addOption(OptionType.INTEGER, "match", "Scheduled match number", true),

@@ -16,6 +16,8 @@ public class ScheduledMatch {
     public boolean checkedB;
     public boolean reminded;
     public boolean startedNotified;
+    public String format = "";
+    public String maps = "";
 
     public ScheduledMatch() {
     }
@@ -28,5 +30,12 @@ public class ScheduledMatch {
         this.teamB = teamB;
         this.scheduledAt = scheduledAt;
         this.channelId = channelId;
+    }
+
+    public ScheduledMatch(int id, String tournament, String teamA, String teamB,
+                          long scheduledAt, String channelId, String format, String maps) {
+        this(id, tournament, teamA, teamB, scheduledAt, channelId);
+        this.format = format == null ? "" : format;
+        this.maps = maps == null ? "" : maps;
     }
 }
